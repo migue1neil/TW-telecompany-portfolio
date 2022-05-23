@@ -6,7 +6,6 @@ library(readr) #讀取檔案必備
 library(ggplot2) # 畫圖使用
 library(lubridate) #轉換日期使用 
 
-
 # 讀取電信三雄的資料
 tele_table = read.table("teleprofolio.txt", encoding = "mbcs" , header = T)
 colnames(tele_table) =  c("證券代碼","公司名稱","年月日","調整收盤價","成交張數")
@@ -41,9 +40,8 @@ stock_index_func = function(table_data, stock_number = 2412){
   attach(table_data)
   table_data[table_data$證券代碼 == stock_number ,]
   print(comprod_return_rate[length(comprod_return_rate),])
-  
-  
 }
+
 
 stock_index_func(tele_table , stock_number = 2412 )
 
@@ -57,7 +55,6 @@ tail(stock_3045)
 
 stock_4904 = tele_table[tele_table$證券代碼 == 4904,]
 tail(stock_4904)
-
 
 table_last = tele_table[年月日 == 20220512 & 證券代碼 != 50,]
 (1+mean(table_last$cumprod_return_rate))**(1/(2022-2013+1))-1 #綜合年化報酬率
