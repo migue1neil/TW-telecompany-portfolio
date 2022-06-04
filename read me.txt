@@ -1,0 +1,7 @@
+hi, this is for caculate the portfolio retrun & risk function
+this file have 3 same R program, basically .
+
+
+the "teleportfolio_return.R " is for orgin use
+the "teleportfolio_return.Rmd " is for html use , this program classify part clearly.
+the "portfolio_function.R" contain the total function in previous part.

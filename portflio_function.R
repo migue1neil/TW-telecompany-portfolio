@@ -8,13 +8,12 @@ library(lubridate) #轉換日期使用
 library(tseries) #會用到最大回落
 library(magrittr) # %>% 水管工人
 
-#整理資料
-tele_table = read.table("teleportfolio.txt", encoding = "mbcs" , header = T) %>% data.table()
-colnames(tele_table) =  c("證券代碼","公司名稱","年月日","調整收盤價","成交張數")
+# 整理資料
+table_data = read.table("teleportfolio.txt", encoding = "mbcs" , header = T) %>% data.table()
+colnames(table_data) =  c("證券代碼","公司名稱","年月日","調整收盤價","成交張數")
 
-table_data = tele_table #施工使用
-
-my_function = function(table_data, start_day , end_day , stock_list , A = 100 ,global_market_index = 0050){ 
+# function
+portfolio_function = function(table_data, start_day , end_day = 20220101, stock_list , A = 100 ,global_market_index = 0050){ 
   #table_data = 整理好的dataframe 
   #A = 投入的金額 
   #start_day = 開始的日期 範例: 20200101
@@ -26,7 +25,7 @@ my_function = function(table_data, start_day , end_day , stock_list , A = 100 ,g
   table_data$年月日 = ymd(table_data$年月日)
   start_day = ymd(start_day)
   end_day = ymd(end_day)
-  table_data = table_data %>% filter(年月日> start_day) %>% filter(年月日< end_day)
+  table_data = table_data %>% filter(年月日>= start_day) %>% filter(年月日<= end_day)
   
   ##### 這邊是為了計算投資報酬指數，所做的資料整理
   #設計一個函數，可以分組後往下移n個單位
@@ -80,14 +79,18 @@ my_function = function(table_data, start_day , end_day , stock_list , A = 100 ,g
     annual_return = round(annual_return,digits = 4)
     #最大回落 :有錯
     mdd = maxdrawdown(x$投資報酬指數)
-    
+    mdd_ratio = (x$投資報酬指數[mdd$to] - x$投資報酬指數[mdd$from]) / x$投資報酬指數[mdd$from]
+    mdd_ratio = round(mdd_ratio,digits = 4)
     #顯示與輸出
-    cat("投資開始日期為:",as.character(x$年月日[1]),"\n")
+    cat("#####################","\n")
+    cat("投組投資開始日期為:",as.character(x$年月日[1]),"\n")
     cat("結束期間為:",as.character(x$年月日[length(x$年月日)]),"\n")
     cat("投資期間共",via_day,"天","\n")
-    cat("期末總報酬為:",total_return*100,"%","\n")
+    cat("期末總報酬為:",round(total_return*100,digits = 2),"%","\n")
     cat("年化報酬為:",annual_return*100,"%","\n")
-    #cat("最大回落為:",mdd$maxdrawdown,"%","\n")
+    cat("最大回落為:",-mdd_ratio*100,"%","\n")
+    cat("最大回落開始日期為:",as.character(x$年月日[mdd$from]),"\n")
+    cat("最大回落結束日期為:",as.character(x$年月日[mdd$to]),"\n")
     cat("#####################","\n")
   }
   
@@ -115,37 +118,40 @@ my_function = function(table_data, start_day , end_day , stock_list , A = 100 ,g
     investment_year = via_day/365 #要算過了幾年
     annual_return = ((total_return+1)^(1/investment_year))-1 #年化報酬率計算公式
     annual_return = round(annual_return,digits = 4)
-    #最大回落 :有錯
+    #最大回落
     mdd = maxdrawdown(x$市場報酬指數)
-    
+    mdd_ratio = (x$市場報酬指數[mdd$to] - x$市場報酬指數[mdd$from]) / x$市場報酬指數[mdd$from]
+    mdd_ratio = round(mdd_ratio,digits = 4)
     #顯示與輸出
   #cat("投資開始日期為:",as.character(x$年月日[1]),"\n")
   #cat("結束期間為:",as.character(x$年月日[length(x$年月日)]),"\n")
   #cat("投資期間共",via_day,"天","\-n")
     cat("市場標的為:",global_market_index,"\n")
-    cat("同期市場期末總報酬為:",total_return*100,"%","\n")
+    cat("同期市場期末總報酬為:",round(total_return*100,digits = 2),"%","\n")
     cat("同期市場年化報酬為:",annual_return*100,"%","\n")
-    #cat("同期市場最大回落為:",mdd$maxdrawdown,"%","\n")
+    cat("同期市場最大回落為:",-mdd_ratio*100,"%","\n")
+    cat("最大回落開始日期為:",as.character(x$年月日[mdd$from]),"\n")
+    cat("最大回落結束日期為:",as.character(x$年月日[mdd$to]),"\n")
     cat("#####################","\n")
   }
   market_return_risk_func(market_return_index)
   
  ##### 畫圖的部分
   graphics_data = merge(portfolio_return_index, market_return_index, by = "年月日")
-  image = ggplot(graphics_data , aes(x = 年月日)) +
+  return_index_image = ggplot(graphics_data , aes(x = 年月日)) +
     geom_line(aes(y = 投資報酬指數), colour = "blue"  ) +
     geom_line(aes(y = 市場報酬指數),colour = "red"  ) +
     # geom_stream(aes(y = 市場報酬指數)) +
     ggtitle("投資組合報酬與市場比較") +
     xlab("投資期間") +
     ylab("報酬指數")
-  image
+  return_index_image
   
 }
 
 #設定投資參數
-stock_list = c(2412,3045,4904,0050)
-my_function(tele_table,start_day = 20140101, end_day = 20220101,stock_list = stock_list ,global_market_index = 0050)
+stock_list = c(2412,3045,4904)
+portfolio_function(table_data,start_day = 20140101, end_day = 20220511,stock_list = stock_list ,global_market_index = 0050)
 
 
 

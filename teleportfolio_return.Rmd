@@ -1,0 +1,391 @@
+---
+title: "R 計算投組報酬率-以電信三雄為例"
+author: "Neil LEE"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float:
+     collapsed: false
+     smooth_scroll: false
+---
+
+<font face="微軟正黑體">
+<font size = 4>
+我的Github : https://github.com/migue1neil/TW-telecompany-portfolio <br>
+
+# 簡介 
+存股在近年來是許多投資族群喜歡的投資方式，其中電信類股是存股族群裡面蠻熱門的標的，本篇以電信三雄當作例子，使用電信三雄(中華電、台灣大、遠傳)當做一個投資組合，計算其報酬率，以及其風險指標，並且跟同時間的台灣50來做比較。
+
+# 程式功能:
+由於已知標的，建立一套量化投資後半部的系統，可以計算投資組合的報酬率以及簡易的風險指標，並且與同時間的市場標的進行比較。本篇資料僅抓取電信三雄以及台灣50來做比較，資料量太大對破筆電來說太殘酷了，理論上可以導入全部的股價資料，可以根據設定的時間一次計算n檔股票，並且比較投組與設定之大盤的績效。
+
+# 資料來源與計算方式
+使用的資料為TEJ股價資料庫，還原股價資料，<br>
+期間為2013/01/02到2022/05/12<br>
+總投資報酬率(total return)為 : 期末股價-期初股價/期初股價<br>
+年化報酬(annual return) : total return^(1/n) ，n = 投資天數/365<br>
+最大回落(Maxdrawdown) : 1+r/cummax(1+r) - 1 
+<br>
+
+
+```{r, include=FALSE}
+setwd("C:/Users/Neil/Documents/git-repos/TW-telecompany-portfolio") # 設定工作目錄
+```
+```{r, message=FALSE}
+library(data.table)
+library(plyr) #會用到ddply
+library(dplyr)
+library(readr) #讀取檔案必備
+library(ggplot2) # 畫圖使用
+library(lubridate) #轉換日期使用 
+library(tseries) #會用到最大回落
+library(magrittr) # %>% 水管工人
+```
+# 讀取資料
+## 讀取電信三雄的資料<br>
+```{r}
+table_data = read.table("teleportfolio.txt", encoding = "mbcs" , header = T) %>% data.table()
+#table_data = tele_data
+colnames(table_data) =  c("證券代碼","公司名稱","年月日","調整收盤價","成交張數")
+table_data$年月日 = ymd(table_data$年月日)
+```
+## 篩選時間
+```{r 時間整理}
+start_day = ymd(20140101) 
+end_day = ymd(20220511) 
+table_data = table_data %>% filter(年月日> start_day) %>% filter(年月日< end_day)
+```
+## 資料平移
+設計一個函數，可以分組後往下移n個單位，來計算單日漲跌幅<br>
+```{r 變數平移}
+group_daily_change_function = function( table_data , n = 1){ #設計一個函數，可以分組後往下移n個單位
+  shift_data = ddply( table_data , c("證券代碼","公司名稱") , 
+                         .fun= function(x){
+                           transform(x, 前一天價格 = with(x, shift(調整收盤價 , n )))
+                         } )
+  shift_data = na.omit(shift_data)
+  shift_data$daily_change = (shift_data$調整收盤價 - shift_data$前一天價格) / shift_data$前一天價格
+  return (shift_data)
+}
+table_data = group_daily_change_function(table_data)
+table_data %>% head(3)
+```
+## 複利報酬計算
+```{r 複利報酬計算}
+# 設計一個函數，可以計算累積乘積
+group_cumprod_func = function(table_data){
+  table_data$tmp_index = table_data$daily_change + 1 #tmp_index是每日變動+1，不是複利
+  cumprod_index = ddply( table_data , c("證券代碼","公司名稱") , 
+                      .fun= function(x){
+                        transform(x, cumprod_return_rate = with(x, cumprod(tmp_index)))
+                      } )
+  #cumprod_index$cumprod_index = cumprod_index$cumprod_return_rate #施工用看一下還沒-1前的變化
+  cumprod_index$cumprod_return_rate = cumprod_index$cumprod_return_rate - 1 #這樣是變成那個時點的複利，所以到時候只要用投入資金乘上1+這個值就是這個時間點的複利效果
+  cumprod_index$cumprod_return_rate = round(cumprod_index$cumprod_return_rate,digit = 3)
+  return(cumprod_index)
+}
+table_data = group_cumprod_func(table_data)
+table_data %>% head(3)
+```
+# 計算投資組合
+接下來需要把需要用到的資料提取出來(這邊是用到上面計算好的複利資料來做計算)，先設定好投入的金額，以及要投入那些股票來做計算，這邊在計算投資組合的時候是假設平均投入來做計算，程式會根據投入的股票數量來平均分配每檔投入的金額，並解計算出每檔股票的投資指數，最後根據投資指數做加總，形成一個投資組合。
+PS. 後續可以思考的方向是可以設計說要市值投入還是平均投入。
+```{r 計算投資組合}
+stock_list = c(2412,3045,4904)
+A = 100 #投入的金額
+n = as.numeric(length(stock_list)) #投資股票的數量
+w = 1/n  #分配的比重 #假設平均分配
+```
+```{r 投資組合報酬指數}
+#先篩出要的股票，在計算指數成長
+portfolio_return_index_func = function(stock_list){
+  portfolio = filter(table_data,證券代碼 %in% stock_list ) #多重篩選用filter比較好用
+  portfolio$分配後的投資報酬指數 = A*w*(portfolio$cumprod_return_rate+1)
+  portfolio_return_index = portfolio[,c("年月日","分配後的投資報酬指數")]
+  portfolio_return_index = portfolio_return_index %>% group_by(年月日) %>% summarise_all(sum)
+  colnames(portfolio_return_index)[2] = "投資報酬指數"
+  return(portfolio_return_index)
+}
+portfolio_return_index = portfolio_return_index_func(stock_list)
+portfolio_return_index %>% head(3)
+```
+## 投資組合風險指標
+```{r 投資組合風險指標}
+# 計算投資組合風險指標
+portfolio_risk_return_func = function(portfolio_return_index){
+  x = portfolio_return_index
+  #期末報酬率
+  total_return = ((x$投資報酬指數[length(x$投資報酬指數)]- x$投資報酬指數[1])/x$投資報酬指數[1]) #期末報酬率
+  #年化報酬率
+  via_day = x$年月日[length(x$年月日)] - x$年月日[1] #計算過了幾天
+  via_day = as.numeric(via_day) #計算完之後再轉換成數字
+  investment_year = via_day/365 #要算過了幾年
+  annual_return = ((total_return+1)^(1/investment_year))-1 #年化報酬率計算公式
+  annual_return = round(annual_return,digits = 4)
+  mdd = maxdrawdown(x$投資報酬指數)
+  mdd_ratio = (x$投資報酬指數[mdd$to] - x$投資報酬指數[mdd$from]) / x$投資報酬指數[mdd$from]
+  mdd_ratio = round(mdd_ratio,digits = 4)
+  print(x$投資報酬指數[mdd$to])  #最大回落低點指數
+  print(x$投資報酬指數[mdd$from]) #最大回落高點指數
+  print(x$年月日[mdd$to]) #最大回落低點天數
+  print(x$年月日[mdd$from]) #最大回落高點天數
+  
+#顯示與輸出
+  #cat("計算股票為:",stock_number,x$公司名稱[1],"\n")
+  cat("#####################","\n")
+  cat("投資開始日期為:",as.character(x$年月日[1]),"\n")
+  cat("結束期間為:",as.character(x$年月日[length(x$年月日)]),"\n")
+  cat("投資期間共",via_day,"天","\n")
+  cat("期末總報酬為:",round(total_return*100,digits = 4),"%","\n")
+  cat("年化報酬為:",annual_return*100,"%","\n")
+  cat("最大回落為:",-mdd_ratio*100,"%","\n")
+  cat("最大回落開始日期為:",as.character(x$年月日[mdd$from]),"\n")
+  cat("最大回落結束日期為:",as.character(x$年月日[mdd$to]),"\n")
+  # print(total_return)
+}
+portfolio_risk_return_func(portfolio_return_index)
+```
+## 市場報酬指數與風險指標
+市場的部分計算方式跟投資組合一樣，只是為了拉出來比較修改了一些顯示數值
+```{r 市場報酬指數與風險指標}
+## 市場標的比較
+global_market_index = 0050
+market_index = global_market_index
+market_return_index_func = function(market_index = global_market_index){
+  market_return = filter(table_data,證券代碼 %in% market_index ) #多重篩選用filter比較好用
+  market_return$報酬指數 = A*(market_return$cumprod_return_rate+1)
+  market_return_index =  market_return[,c("年月日","報酬指數")]
+  market_return_index = market_return_index %>% group_by(年月日) %>% summarise_all(sum)
+  colnames(market_return_index)[2] = "市場報酬指數"
+  return(market_return_index)
+}
+market_return_index = market_return_index_func() #到這邊就計算完投資報酬指數了
+market_return_risk_func = function(market_return_index){
+  x = market_return_index
+  #期末報酬率
+  total_return = ((x$市場報酬指數[length(x$市場報酬指數)]- x$市場報酬指數[1])/x$市場報酬指數[1]) #期末報酬率
+  #年化報酬率
+  via_day = x$年月日[length(x$年月日)] - x$年月日[1] #計算過了幾天
+  via_day = as.numeric(via_day) #計算完之後再轉換成數字
+  investment_year = via_day/365 #要算過了幾年
+  annual_return = ((total_return+1)^(1/investment_year))-1 #年化報酬率計算公式
+  annual_return = round(annual_return,digits = 4)
+  #最大回落 
+  mdd = maxdrawdown(x$市場報酬指數)
+  mdd_ratio = (x$市場報酬指數[mdd$to] - x$市場報酬指數[mdd$from]) / x$市場報酬指數[mdd$from]
+  mdd_ratio = round(mdd_ratio,digits = 4)
+  # print(x$市場報酬指數[mdd$from]) #最大回落高點指數
+  # print(x$市場報酬指數[mdd$to])  #最大回落低點指數
+  # print(x$年月日[mdd$from]) #最大回落高點天數
+  # print(x$年月日[mdd$to]) #最大回落低點天數
+#  market_mdd_df = data.table(市場最大回落指數 = c(x$市場報酬指數[mdd$from],x$市場報酬指數[mdd$to]),年月日 = c(x$年月日[mdd$from],x$年月日[mdd$to]))
+  
+  #顯示與輸出
+  cat("#####################","\n")
+  cat("市場標的為:",global_market_index,"\n")
+  cat("同期市場期末總報酬為:",round(total_return*100,digits = 2),"%","\n")
+  cat("同期市場年化報酬為:",annual_return*100,"%","\n")
+  cat("同期市場最大回落為:",-mdd_ratio*100,"%","\n")
+  cat("最大回落開始日期為:",as.character(x$年月日[mdd$from]),"\n")
+  cat("最大回落結束日期為:",as.character(x$年月日[mdd$to]),"\n")
+  cat("#####################","\n")
+  
+}
+market_return_risk_func(market_return_index)
+```
+## 投組與市場報酬比較圖
+```{r 投組與市場報酬比較}
+##### 畫圖的部分
+graphics_data = merge(portfolio_return_index, market_return_index, by = "年月日")
+return_index_image = ggplot(graphics_data , aes(x = 年月日)) +
+        geom_line(aes(y = 投資報酬指數), colour = "blue") +
+        geom_line(aes(y = 市場報酬指數),colour = "red"  ) +
+       # geom_stream(aes(y = 市場報酬指數)) +
+        ggtitle("投資組合報酬與市場比較") +
+        xlab("投資期間") +
+        ylab("報酬指數") 
+return_index_image
+```
+<br>
+```{r 移除變數重新執行, include=FALSE}
+rm("A","end_day","global_market_index","graphics_data","group_cumprod_func","group_daily_change_function","market_index","market_return_index","market_return_index_func","market_return_risk_func","my_function","n","portfolio_return_index","portfolio_return_index_func","portfolio_risk_return_func","return_index_image","start_day","stock_list","table_data","tele_data","w")
+table_data = read.table("teleportfolio.txt", encoding = "mbcs" , header = T) %>% data.table()
+colnames(table_data) =  c("證券代碼","公司名稱","年月日","調整收盤價","成交張數")
+```
+
+```{r 功能函式化 ,include=FALSE}
+## 把這些功能放到function裡面一次完成，礙於篇幅因素在這邊不顯示，詳細資料可以參考我的github
+my_function = function(table_data, start_day , end_day , stock_list , A = 100 ,global_market_index = 0050){ 
+  #table_data = 整理好的dataframe 
+  #A = 投入的金額 
+  #start_day = 開始的日期 範例: 20200101
+  #end_day = 結束的日期 範例: 20220501
+  #A = 起始投資金額，預設為100
+  #global_market_index = 全域市場變數 
+  
+  #先篩選資料的時間
+  table_data$年月日 = ymd(table_data$年月日)
+  start_day = ymd(start_day)
+  end_day = ymd(end_day)
+  table_data = table_data %>% filter(年月日>= start_day) %>% filter(年月日<= end_day)
+  
+  ##### 這邊是為了計算投資報酬指數，所做的資料整理
+  #設計一個函數，可以分組後往下移n個單位
+  group_daily_change_function = function( table_data , n = 1){ #設計一個函數，可以分組後往下移n個單位
+    shift_data = ddply( table_data , c("證券代碼","公司名稱") , 
+                        .fun= function(x){
+                          transform(x, 前一天價格 = with(x, shift(調整收盤價 , n )))
+                        } )
+    shift_data = na.omit(shift_data)
+    shift_data$daily_change = (shift_data$調整收盤價 - shift_data$前一天價格) / shift_data$前一天價格
+    return (shift_data)
+  }
+  table_data = group_daily_change_function(table_data)
+  #設計一個函數，可以計算累積乘積(每天的複利)
+  group_cumprod_func = function(table_data){
+    table_data$tmp_index = table_data$daily_change + 1 #tmp_index是每日變動+1，不是複利
+    cumprod_index = ddply( table_data , c("證券代碼","公司名稱") , 
+                           .fun= function(x){
+                             transform(x, cumprod_return_rate = with(x, cumprod(tmp_index)))
+                           } )
+    #cumprod_index$cumprod_index = cumprod_index$cumprod_return_rate #施工用看一下還沒-1前的變化
+    cumprod_index$cumprod_return_rate = cumprod_index$cumprod_return_rate - 1 #這樣是變成那個時點的複利，所以到時候只要用投入資金乘上1+這個值就是這個時間點的複利效果
+    cumprod_index$cumprod_return_rate = round(cumprod_index$cumprod_return_rate,digit = 3)
+    return(cumprod_index)
+  }
+  table_data = group_cumprod_func(table_data)
+  
+  ##### 接下來要用到上面算完的東西來計算指標，要把上面的資料取出我們要的股票來計算投資報酬率
+  n = as.numeric(length(stock_list)) #投資股票的數量
+  w = 1/n  #分配的比重 #假設平均分配
+  portfolio_return_index_func = function(stock_list){
+    portfolio = filter(table_data,證券代碼 %in% stock_list ) #多重篩選用filter比較好用
+    portfolio$分配後的投資報酬指數 = A*w*(portfolio$cumprod_return_rate+1)
+    portfolio_return_index = portfolio[,c("年月日","分配後的投資報酬指數")]
+    portfolio_return_index = portfolio_return_index %>% group_by(年月日) %>% summarise_all(sum)
+    colnames(portfolio_return_index)[2] = "投資報酬指數"
+    return(portfolio_return_index)
+  }
+  portfolio_return_index = portfolio_return_index_func(stock_list) #到這邊就計算完投資報酬指數了
+  
+  ##### 這邊是利用算完的投資報酬指數來計算一些風險_報酬指標
+  portfolio_risk_return_func = function( portfolio_return_index ){
+    x = portfolio_return_index
+    #期末報酬率
+    total_return = ((x$投資報酬指數[length(x$投資報酬指數)]- x$投資報酬指數[1])/x$投資報酬指數[1]) #期末報酬率
+    #年化報酬率
+    via_day = x$年月日[length(x$年月日)] - x$年月日[1] #計算過了幾天
+    via_day = as.numeric(via_day) #計算完之後再轉換成數字
+    investment_year = via_day/365 #要算過了幾年
+    annual_return = ((total_return+1)^(1/investment_year))-1 #年化報酬率計算公式
+    annual_return = round(annual_return,digits = 4)
+    #最大回落 :有錯
+    mdd = maxdrawdown(x$投資報酬指數)
+    mdd_ratio = (x$投資報酬指數[mdd$to] - x$投資報酬指數[mdd$from]) / x$投資報酬指數[mdd$from]
+    mdd_ratio = round(mdd_ratio,digits = 4)
+    #顯示與輸出
+    cat("#####################","\n")
+    cat("投組投資開始日期為:",as.character(x$年月日[1]),"\n")
+    cat("結束期間為:",as.character(x$年月日[length(x$年月日)]),"\n")
+    cat("投資期間共",via_day,"天","\n")
+    cat("期末總報酬為:",round(total_return*100,digits = 2),"%","\n")
+    cat("年化報酬為:",annual_return*100,"%","\n")
+    cat("最大回落為:",-mdd_ratio*100,"%","\n")
+    cat("最大回落開始日期為:",as.character(x$年月日[mdd$from]),"\n")
+    cat("最大回落結束日期為:",as.character(x$年月日[mdd$to]),"\n")
+    cat("#####################","\n")
+  }
+  
+  portfolio_risk_return_func(portfolio_return_index)
+  
+  #####這邊要輸出市場標的來做比較
+  #cat("我故意cat的",global_market_index,"\n")  
+  
+  market_return_index_func = function(market_index = global_market_index){
+    market_return = filter(table_data,證券代碼 %in% market_index ) #多重篩選用filter比較好用
+    market_return$報酬指數 = A*(market_return$cumprod_return_rate+1)
+    market_return_index =  market_return[,c("年月日","報酬指數")]
+    market_return_index = market_return_index %>% group_by(年月日) %>% summarise_all(sum)
+    colnames(market_return_index)[2] = "市場報酬指數"
+    return(market_return_index)
+  }
+  market_return_index = market_return_index_func() #到這邊就計算完投資報酬指數了
+  market_return_risk_func = function(market_return_index){
+    x = market_return_index
+    #期末報酬率
+    total_return = ((x$市場報酬指數[length(x$市場報酬指數)]- x$市場報酬指數[1])/x$市場報酬指數[1]) #期末報酬率
+    #年化報酬率
+    via_day = x$年月日[length(x$年月日)] - x$年月日[1] #計算過了幾天
+    via_day = as.numeric(via_day) #計算完之後再轉換成數字
+    investment_year = via_day/365 #要算過了幾年
+    annual_return = ((total_return+1)^(1/investment_year))-1 #年化報酬率計算公式
+    annual_return = round(annual_return,digits = 4)
+    #最大回落
+    mdd = maxdrawdown(x$市場報酬指數)
+    mdd_ratio = (x$市場報酬指數[mdd$to] - x$市場報酬指數[mdd$from]) / x$市場報酬指數[mdd$from]
+    mdd_ratio = round(mdd_ratio,digits = 4)
+    #顯示與輸出
+  #cat("投資開始日期為:",as.character(x$年月日[1]),"\n")
+  #cat("結束期間為:",as.character(x$年月日[length(x$年月日)]),"\n")
+  #cat("投資期間共",via_day,"天","\-n")
+    cat("市場標的為:",global_market_index,"\n")
+    cat("同期市場期末總報酬為:",round(total_return*100,digits = 2),"%","\n")
+    cat("同期市場年化報酬為:",annual_return*100,"%","\n")
+    cat("同期市場最大回落為:",-mdd_ratio*100,"%","\n")
+    cat("最大回落開始日期為:",as.character(x$年月日[mdd$from]),"\n")
+    cat("最大回落結束日期為:",as.character(x$年月日[mdd$to]),"\n")
+    cat("#####################","\n")
+  }
+  market_return_risk_func(market_return_index)
+  
+ ##### 畫圖的部分
+  graphics_data = merge(portfolio_return_index, market_return_index, by = "年月日")
+  return_index_image = ggplot(graphics_data , aes(x = 年月日)) +
+    geom_line(aes(y = 投資報酬指數), colour = "blue"  ) +
+    geom_line(aes(y = 市場報酬指數),colour = "red"  ) +
+    # geom_stream(aes(y = 市場報酬指數)) +
+    ggtitle("投資組合報酬與市場比較") +
+    xlab("投資期間") +
+    ylab("報酬指數")
+  return_index_image
+  
+}
+```
+# 程式一鍵執行
+接下來把這些功能放到function裡面一次完成，礙於篇幅因素在這邊不顯示，程式碼大致上相同，詳細資料可以參考我的github -> portfolio_function<br>
+將功能函式化之後便可以快速執行程式，未來資料量變多也可以篩出一籃子股票之後直接拉進來計算投資組合報酬率。並且跟市場比較。
+```{r 一鍵執行}
+stock_list = c(2412,3045,4904)
+my_function(table_data,start_day = 20140101, end_day = 20220511,stock_list = stock_list ,global_market_index = 0050)
+```
+
+# 結論
+從資料中我們可以看到若我們從2014年第一個交易日開始投資，到2022/05/11為止，單純持有台灣50的總報酬率為 177%，年化報酬為13%，而電信三雄投資組合的報酬率為82%，年化報酬為7.46%，電信三雄投資組合報酬可以說是低了不少，唯獨最大回落較台灣50低，台灣50在過去期間最大的跌幅高達28.2%，而電信投組僅14.8%，因此，我們可以假設這個電信三雄的投資組合比較適合風險接受度較低的投資人，畢竟，投資風險承受度每個人都不同，選擇最適合自己的投組才是最重要的。<br>
+
+## 後記-系統改善方向
+1. 本程式僅使用單筆投入來計算投資組合，對於習慣定期定額的投資人來說不是用，但理論上，越早投入複利效果越好，目前不會往這方面設計。<br>
+2. 沒辦法做再平衡的動作，系統只能單筆投入，未來發展方向希望可以每個月10號的時候決定要買入甚麼類型的股票，或是每個季的季報交易日結束之後進行交易。<br> 
+3. 系統沒有考慮手續費，如果未來執行再平衡交易的話，手續費成本十分重要，但評估下來，設計完擇時候再加入參數即可，難度不大。<br>
+4. 系統沒有把每年的績效匯出，要匯出的話可能要再想一下，希望可以匯出成一份交易資料再匯出，存起來。<br>
+
+
+<br>
+<br>
+<br>
+
+
+
+
+
+
+
+__________________________________________________________________________________
+<footer>
+    <p>© 2022 Neil</p>
+    <!-- A footer for the page. -->
+  </footer>
+
+
+</font>
+</font>
