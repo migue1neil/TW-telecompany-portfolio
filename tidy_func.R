@@ -6,19 +6,22 @@ library(readr) #讀取檔案必備
 library(ggplot2) # 畫圖使用
 library(lubridate) #轉換日期使用 
 library(tseries) #會用到最大回落
-# library(stringr) #字串串接使用
 library(magrittr) # %>% 水管工人
 
 #整理資料
-tele_table = read.table("teleportfolio.txt", encoding = "mbcs" , header = T)
+tele_table = read.table("teleportfolio.txt", encoding = "mbcs" , header = T) %>% data.table()
 colnames(tele_table) =  c("證券代碼","公司名稱","年月日","調整收盤價","成交張數")
 
-#設定投資參數
-stock_list = c(2412,3045,4904)
+table_data = tele_table #施工使用
 
-# table_data = tele_table #施工使用
-
-my_function = function(table_data, start_day, end_day, stock_list = 0050 , A = 100 ){ #A = 投入的金額
+my_function = function(table_data, start_day , end_day , stock_list , A = 100 ,global_market_index = 0050){ 
+  #table_data = 整理好的dataframe 
+  #A = 投入的金額 
+  #start_day = 開始的日期 範例: 20200101
+  #end_day = 結束的日期 範例: 20220501
+  #A = 起始投資金額，預設為100
+  #global_market_index = 全域市場變數 
+  
   #先篩選資料的時間
   table_data$年月日 = ymd(table_data$年月日)
   start_day = ymd(start_day)
@@ -75,7 +78,7 @@ my_function = function(table_data, start_day, end_day, stock_list = 0050 , A = 1
     investment_year = via_day/365 #要算過了幾年
     annual_return = ((total_return+1)^(1/investment_year))-1 #年化報酬率計算公式
     annual_return = round(annual_return,digits = 4)
-    #最大回落
+    #最大回落 :有錯
     mdd = maxdrawdown(x$投資報酬指數)
     
     #顯示與輸出
@@ -84,16 +87,65 @@ my_function = function(table_data, start_day, end_day, stock_list = 0050 , A = 1
     cat("投資期間共",via_day,"天","\n")
     cat("期末總報酬為:",total_return*100,"%","\n")
     cat("年化報酬為:",annual_return*100,"%","\n")
-    cat("最大回落為:",mdd$maxdrawdown,"%","\n")
+    #cat("最大回落為:",mdd$maxdrawdown,"%","\n")
     cat("#####################","\n")
   }
   
   portfolio_risk_return_func(portfolio_return_index)
   
+  #####這邊要輸出市場標的來做比較
+  #cat("我故意cat的",global_market_index,"\n")  
+  
+  market_return_index_func = function(market_index = global_market_index){
+    market_return = filter(table_data,證券代碼 %in% market_index ) #多重篩選用filter比較好用
+    market_return$報酬指數 = A*(market_return$cumprod_return_rate+1)
+    market_return_index =  market_return[,c("年月日","報酬指數")]
+    market_return_index = market_return_index %>% group_by(年月日) %>% summarise_all(sum)
+    colnames(market_return_index)[2] = "市場報酬指數"
+    return(market_return_index)
+  }
+  market_return_index = market_return_index_func() #到這邊就計算完投資報酬指數了
+  market_return_risk_func = function(market_return_index){
+    x = market_return_index
+    #期末報酬率
+    total_return = ((x$市場報酬指數[length(x$市場報酬指數)]- x$市場報酬指數[1])/x$市場報酬指數[1]) #期末報酬率
+    #年化報酬率
+    via_day = x$年月日[length(x$年月日)] - x$年月日[1] #計算過了幾天
+    via_day = as.numeric(via_day) #計算完之後再轉換成數字
+    investment_year = via_day/365 #要算過了幾年
+    annual_return = ((total_return+1)^(1/investment_year))-1 #年化報酬率計算公式
+    annual_return = round(annual_return,digits = 4)
+    #最大回落 :有錯
+    mdd = maxdrawdown(x$市場報酬指數)
+    
+    #顯示與輸出
+  #cat("投資開始日期為:",as.character(x$年月日[1]),"\n")
+  #cat("結束期間為:",as.character(x$年月日[length(x$年月日)]),"\n")
+  #cat("投資期間共",via_day,"天","\-n")
+    cat("市場標的為:",global_market_index,"\n")
+    cat("同期市場期末總報酬為:",total_return*100,"%","\n")
+    cat("同期市場年化報酬為:",annual_return*100,"%","\n")
+    #cat("同期市場最大回落為:",mdd$maxdrawdown,"%","\n")
+    cat("#####################","\n")
+  }
+  market_return_risk_func(market_return_index)
+  
+ ##### 畫圖的部分
+  graphics_data = merge(portfolio_return_index, market_return_index, by = "年月日")
+  image = ggplot(graphics_data , aes(x = 年月日)) +
+    geom_line(aes(y = 投資報酬指數), colour = "blue"  ) +
+    geom_line(aes(y = 市場報酬指數),colour = "red"  ) +
+    # geom_stream(aes(y = 市場報酬指數)) +
+    ggtitle("投資組合報酬與市場比較") +
+    xlab("投資期間") +
+    ylab("報酬指數")
+  image
+  
 }
 
+#設定投資參數
 stock_list = c(2412,3045,4904,0050)
-my_function(tele_table,start_day = 20140101, end_day = 20220101,stock_list = stock_list)
+my_function(tele_table,start_day = 20140101, end_day = 20220101,stock_list = stock_list ,global_market_index = 0050)
 
 
 
