@@ -18,7 +18,7 @@ table_data = tele_data
 colnames(table_data) =  c("證券代碼","公司名稱","年月日","調整收盤價","成交張數")
 table_data$年月日 = ymd(table_data$年月日)
 # 篩選時間
-start_day = 20140101
+start_day = 20130101
 end_day = 20220101
 #防呆設計晚點再加
 # if(start_day > end_day){

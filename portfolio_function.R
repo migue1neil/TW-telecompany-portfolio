@@ -7,10 +7,14 @@ library(ggplot2) # 畫圖使用
 library(lubridate) #轉換日期使用 
 library(tseries) #會用到最大回落
 library(magrittr) # %>% 水管工人
+# this file was ex=ncoding by UTF-8
 
 # 整理資料
-table_data = read.table("teleportfolio.txt", encoding = "mbcs" , header = T) %>% data.table()
-colnames(table_data) =  c("證券代碼","公司名稱","年月日","調整收盤價","成交張數")
+# table_data = read.table("teleportfolio.txt", encoding = "mbcs" , header = T) %>% data.table()
+# colnames(table_data) =  c("證券代碼","公司名稱","年月日","調整收盤價","成交張數")
+table_data = read.csv2("C:/Users/Neil/Documents/git-repos/backtest_in_R/quant/tidy_stock_price_data20130101_20220607.csv", encoding = "mbcs" , header = T,sep = ",") %>% data.table()
+table_data$調整開盤價 = as.numeric(table_data$調整開盤價)
+table_data$調整收盤價 = as.numeric(table_data$調整收盤價)
 
 # function
 portfolio_function = function(table_data, start_day , end_day = 20220101, stock_list , A = 100 ,global_market_index = 0050){ 
@@ -77,7 +81,7 @@ portfolio_function = function(table_data, start_day , end_day = 20220101, stock_
     investment_year = via_day/365 #要算過了幾年
     annual_return = ((total_return+1)^(1/investment_year))-1 #年化報酬率計算公式
     annual_return = round(annual_return,digits = 4)
-    #最大回落 :有錯
+    #最大回落 
     mdd = maxdrawdown(x$投資報酬指數)
     mdd_ratio = (x$投資報酬指數[mdd$to] - x$投資報酬指數[mdd$from]) / x$投資報酬指數[mdd$from]
     mdd_ratio = round(mdd_ratio,digits = 4)
@@ -85,6 +89,7 @@ portfolio_function = function(table_data, start_day , end_day = 20220101, stock_
     cat("#####################","\n")
     cat("投組投資開始日期為:",as.character(x$年月日[1]),"\n")
     cat("結束期間為:",as.character(x$年月日[length(x$年月日)]),"\n")
+    cat("投資的股票數量為",length(stock_list),"檔","\n")
     cat("投資期間共",via_day,"天","\n")
     cat("期末總報酬為:",round(total_return*100,digits = 2),"%","\n")
     cat("年化報酬為:",annual_return*100,"%","\n")
@@ -115,7 +120,7 @@ portfolio_function = function(table_data, start_day , end_day = 20220101, stock_
     #年化報酬率
     via_day = x$年月日[length(x$年月日)] - x$年月日[1] #計算過了幾天
     via_day = as.numeric(via_day) #計算完之後再轉換成數字
-    investment_year = via_day/365 #要算過了幾年
+    investment_year = via_day/365 #要算過了幾年 #如果是用交易天數計算的話就要用252
     annual_return = ((total_return+1)^(1/investment_year))-1 #年化報酬率計算公式
     annual_return = round(annual_return,digits = 4)
     #最大回落
@@ -150,8 +155,10 @@ portfolio_function = function(table_data, start_day , end_day = 20220101, stock_
 }
 
 #設定投資參數
-stock_list = c(2412,3045,4904)
-portfolio_function(table_data,start_day = 20140101, end_day = 20220511,stock_list = stock_list ,global_market_index = 0050)
+ # all_stock_list = unique(table_data$證券代碼)
+ # stock_list = all_stock_list
+ stock_list = c(3008,0050,0056,1101,1102,1103,1104,1108,1109,1110,1201,1203,1210,1213,1215,1216,1217,1218,1219,1220,1225,1227,1229,1231,1232,1233,1234)
+ portfolio_function(table_data,start_day = 20140101, end_day = 20220511,stock_list = stock_list ,global_market_index = 0050)
 
 
 
