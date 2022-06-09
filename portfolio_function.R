@@ -1,4 +1,9 @@
+# this file was ex=ncoding by UTF-8
+
+
 setwd("C:/Users/Neil/Documents/git-repos/TW-telecompany-portfolio") # 設定工作目錄
+# package_list = c("data.table","dplyr","plyr","readr","ggplot2","lubridate","tseries","magrittr","foreach")
+# install.packages(package_list)
 library(data.table)
 library(dplyr)
 library(plyr)
@@ -7,14 +12,14 @@ library(ggplot2) # 畫圖使用
 library(lubridate) #轉換日期使用 
 library(tseries) #會用到最大回落
 library(magrittr) # %>% 水管工人
-# this file was ex=ncoding by UTF-8
+# install.packages("foreach")
+# library(foreach)
 
-# 整理資料
 # table_data = read.table("teleportfolio.txt", encoding = "mbcs" , header = T) %>% data.table()
 # colnames(table_data) =  c("證券代碼","公司名稱","年月日","調整收盤價","成交張數")
-table_data = read.csv2("C:/Users/Neil/Documents/git-repos/backtest_in_R/quant/tidy_stock_price_data20130101_20220607.csv", encoding = "mbcs" , header = T,sep = ",") %>% data.table()
-table_data$調整開盤價 = as.numeric(table_data$調整開盤價)
-table_data$調整收盤價 = as.numeric(table_data$調整收盤價)
+# table_data = read.csv2("C:/Users/Neil/Documents/git-repos/backtest_in_R/quant/tidy_stock_price_data20130101_20220607.csv", encoding = "mbcs" , header = T,sep = ",") %>% data.table()
+# table_data$調整開盤價 = as.numeric(table_data$調整開盤價)
+# table_data$調整收盤價 = as.numeric(table_data$調整收盤價)
 
 # function
 portfolio_function = function(table_data, start_day , end_day = 20220101, stock_list , A = 100 ,global_market_index = 0050){ 
@@ -35,11 +40,11 @@ portfolio_function = function(table_data, start_day , end_day = 20220101, stock_
   #設計一個函數，可以分組後往下移n個單位
   group_daily_change_function = function( table_data , n = 1){ #設計一個函數，可以分組後往下移n個單位
     shift_data = ddply( table_data , c("證券代碼","公司名稱") , 
-                        .fun= function(x){
-                          transform(x, 前一天價格 = with(x, shift(調整收盤價 , n )))
+                        .fun= function(x){ #這裡的x是指根據上面分完組切出來的table_data
+                          transform(x, 前一日價格 = with(x, shift(調整收盤價 , n )))
                         } )
     shift_data = na.omit(shift_data)
-    shift_data$daily_change = (shift_data$調整收盤價 - shift_data$前一天價格) / shift_data$前一天價格
+    shift_data$daily_change = (shift_data$調整收盤價 - shift_data$前一日價格) / shift_data$前一日價格
     return (shift_data)
   }
   table_data = group_daily_change_function(table_data)
@@ -55,7 +60,7 @@ portfolio_function = function(table_data, start_day , end_day = 20220101, stock_
     cumprod_index$cumprod_return_rate = round(cumprod_index$cumprod_return_rate,digit = 3)
     return(cumprod_index)
   }
-  table_data = group_cumprod_func(table_data)
+  #table_data = group_cumprod_func(table_data)
   
   ##### 接下來要用到上面算完的東西來計算指標，要把上面的資料取出我們要的股票來計算投資報酬率
   n = as.numeric(length(stock_list)) #投資股票的數量
@@ -157,8 +162,8 @@ portfolio_function = function(table_data, start_day , end_day = 20220101, stock_
 #設定投資參數
  # all_stock_list = unique(table_data$證券代碼)
  # stock_list = all_stock_list
- stock_list = c(3008,0050,0056,1101,1102,1103,1104,1108,1109,1110,1201,1203,1210,1213,1215,1216,1217,1218,1219,1220,1225,1227,1229,1231,1232,1233,1234)
- portfolio_function(table_data,start_day = 20140101, end_day = 20220511,stock_list = stock_list ,global_market_index = 0050)
+ # stock_list = c(3008,0050,0056,1101,1102,1103,1104,1108,1109,1110,1201,1203,1210,1213,1215,1216,1217,1218,1219,1220,1225,1227,1229,1231,1232,1233,1234)
+ # portfolio_function(table_data,start_day = 20140101, end_day = 20220511,stock_list = stock_list ,global_market_index = 0050)
 
 
 
