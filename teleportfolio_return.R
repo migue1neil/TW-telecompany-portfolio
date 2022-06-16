@@ -18,7 +18,7 @@ table_data = tele_data
 colnames(table_data) =  c("證券代碼","公司名稱","年月日","調整收盤價","成交張數")
 table_data$年月日 = ymd(table_data$年月日)
 # 篩選時間
-start_day = 20130101
+start_day = 20210101=
 end_day = 20220101
 #防呆設計晚點再加
 # if(start_day > end_day){
@@ -52,7 +52,7 @@ group_cumprod_func = function(table_data){
                       .fun= function(x){
                         transform(x, cumprod_return_rate = with(x, cumprod(tmp_index)))
                       } )
-  cumprod_index$cumprod_index = cumprod_index$cumprod_return_rate #施工用看一下還沒-1前的變化
+  #cumprod_index$cumprod_index = cumprod_index$cumprod_return_rate #施工用看一下還沒-1前的變化
   cumprod_index$cumprod_return_rate = cumprod_index$cumprod_return_rate - 1 #這樣是變成那個時點的複利，所以到時候只要用投入資金乘上1+這個值就是這個時間點的複利效果
   cumprod_index$cumprod_return_rate = round(cumprod_index$cumprod_return_rate,digit = 3)
   return(cumprod_index)
@@ -103,6 +103,9 @@ portfolio_risk_return_func = function(portfolio_return_index){
   # print(x$投資報酬指數[mdd$from]) #最大回落高點指數
   # print(x$年月日[mdd$to]) #最大回落低點天數
   # print(x$年月日[mdd$from]) #最大回落高點天數
+  mdd_start_day = x$年月日[mdd$from]
+  mdd_end_day = x$年月日[mdd$to]
+  mdd_during_period = (mdd_end_day - mdd_start_day) %>% as.numeric()
   
 #顯示與輸出
   #cat("計算股票為:",stock_number,x$公司名稱[1],"\n")
@@ -116,10 +119,11 @@ portfolio_risk_return_func = function(portfolio_return_index){
   cat("最大回落結束日期為:",as.character(x$年月日[mdd$to]),"\n")
   cat("#####################","\n")
   # print(total_return)
-  
+  pf_value = data.table(期間總報酬 = total_return , 投組最大回落 = mdd_ratio , 投組開始期間 = mdd_start_day , 回落結束期間 = mdd_end_day  )
+  return(pf_value) 
 }
 
-portfolio_mdd = portfolio_risk_return_func(portfolio_return_index)
+pf_value_df = portfolio_risk_return_func(portfolio_return_index)
 
 ## 市場標的比較
 global_market_index = 0050
@@ -143,18 +147,16 @@ market_return_risk_func = function(market_return_index){
   investment_year = via_day/365 #要算過了幾年
   annual_return = ((total_return+1)^(1/investment_year))-1 #年化報酬率計算公式
   annual_return = round(annual_return,digits = 4)
-  #最大回落 
+  #最大回落
   mdd = maxdrawdown(x$市場報酬指數)
   mdd_ratio = (x$市場報酬指數[mdd$to] - x$市場報酬指數[mdd$from]) / x$市場報酬指數[mdd$from]
   mdd_ratio = round(mdd_ratio,digits = 4)
-  # print(x$市場報酬指數[mdd$from]) #最大回落高點指數
-  # print(x$市場報酬指數[mdd$to])  #最大回落低點指數
-  # print(x$年月日[mdd$from]) #最大回落高點天數
-  # print(x$年月日[mdd$to]) #最大回落低點天數
-  market_mdd_df = data.table(市場最大回落指數 = c(x$市場報酬指數[mdd$from],x$市場報酬指數[mdd$to]),年月日 = c(x$年月日[mdd$from],x$年月日[mdd$to]))
-  
+  mdd_start_day = x$年月日[mdd$from]
+  mdd_end_day = x$年月日[mdd$to]
   #顯示與輸出
-  cat("#####################","\n")
+  #cat("投資開始日期為:",as.character(x$年月日[1]),"\n")
+  #cat("結束期間為:",as.character(x$年月日[length(x$年月日)]),"\n")
+  #cat("投資期間共",via_day,"天","\-n")
   cat("市場標的為:",global_market_index,"\n")
   cat("同期市場期末總報酬為:",round(total_return*100,digits = 2),"%","\n")
   cat("同期市場年化報酬為:",annual_return*100,"%","\n")
@@ -162,9 +164,11 @@ market_return_risk_func = function(market_return_index){
   cat("最大回落開始日期為:",as.character(x$年月日[mdd$from]),"\n")
   cat("最大回落結束日期為:",as.character(x$年月日[mdd$to]),"\n")
   cat("#####################","\n")
-  
+  market_value = data.table(市場期間總報酬 = total_return , 市場最大回落 = mdd_ratio , 市場回落開始期間 = mdd_start_day , 市場回落結束期間 = mdd_end_day  )
 }
-market_return_risk_func(market_return_index)
+market_value_df = market_return_risk_func(market_return_index)
+#合併表格 
+sum_data = cbind(pf_value_df , market_value_df) 
 
 
 ##### 畫圖的部分
@@ -186,4 +190,4 @@ return_index_image
 #####
 #目前已知，end_day日期設在最後一天最大回落會錯，不知道為什麼
 
-
+#write.csv(graphics_data,"graphics_data.csv")

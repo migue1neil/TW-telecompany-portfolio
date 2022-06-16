@@ -1,7 +1,10 @@
 # this file was ex=ncoding by UTF-8
-
-
 setwd("C:/Users/Neil/Documents/git-repos/TW-telecompany-portfolio") # 設定工作目錄
+stock_price_data = read.csv2("C:/Users/Neil/Documents/git-repos/backtest_in_R/stock_data/tidy_stock_price_data20130101_20220607.csv", encoding = "mbcs" , header = T,sep = ",") %>% data.table()
+table_data = stock_price_data
+table_data$調整開盤價 = as.numeric(table_data$調整開盤價)
+table_data$調整收盤價 = as.numeric(table_data$調整收盤價)
+
 # package_list = c("data.table","dplyr","plyr","readr","ggplot2","lubridate","tseries","magrittr","foreach")
 # install.packages(package_list)
 library(data.table)
@@ -17,7 +20,7 @@ library(magrittr) # %>% 水管工人
 
 # table_data = read.table("teleportfolio.txt", encoding = "mbcs" , header = T) %>% data.table()
 # colnames(table_data) =  c("證券代碼","公司名稱","年月日","調整收盤價","成交張數")
-# table_data = read.csv2("C:/Users/Neil/Documents/git-repos/backtest_in_R/quant/tidy_stock_price_data20130101_20220607.csv", encoding = "mbcs" , header = T,sep = ",") %>% data.table()
+# table_data = read.csv2("C:/Users/Neil/Documents/git-repos/backtest_in_R/stock_data/tidy_stock_price_data20130101_20220607.csv", encoding = "mbcs" , header = T,sep = ",") %>% data.table()
 # table_data$調整開盤價 = as.numeric(table_data$調整開盤價)
 # table_data$調整收盤價 = as.numeric(table_data$調整收盤價)
 
@@ -60,7 +63,7 @@ portfolio_function = function(table_data, start_day , end_day = 20220101, stock_
     cumprod_index$cumprod_return_rate = round(cumprod_index$cumprod_return_rate,digit = 3)
     return(cumprod_index)
   }
-  #table_data = group_cumprod_func(table_data)
+  table_data = group_cumprod_func(table_data)
   
   ##### 接下來要用到上面算完的東西來計算指標，要把上面的資料取出我們要的股票來計算投資報酬率
   n = as.numeric(length(stock_list)) #投資股票的數量
@@ -90,6 +93,9 @@ portfolio_function = function(table_data, start_day , end_day = 20220101, stock_
     mdd = maxdrawdown(x$投資報酬指數)
     mdd_ratio = (x$投資報酬指數[mdd$to] - x$投資報酬指數[mdd$from]) / x$投資報酬指數[mdd$from]
     mdd_ratio = round(mdd_ratio,digits = 4)
+    mdd_start_day = x$年月日[mdd$from]
+    mdd_end_day = x$年月日[mdd$to]
+    
     #顯示與輸出
     cat("#####################","\n")
     cat("投組投資開始日期為:",as.character(x$年月日[1]),"\n")
@@ -102,10 +108,11 @@ portfolio_function = function(table_data, start_day , end_day = 20220101, stock_
     cat("最大回落開始日期為:",as.character(x$年月日[mdd$from]),"\n")
     cat("最大回落結束日期為:",as.character(x$年月日[mdd$to]),"\n")
     cat("#####################","\n")
+    
   }
   
-  portfolio_risk_return_func(portfolio_return_index)
-  
+portfolio_risk_return_func(portfolio_return_index)
+
   #####這邊要輸出市場標的來做比較
   #cat("我故意cat的",global_market_index,"\n")  
   
@@ -132,6 +139,8 @@ portfolio_function = function(table_data, start_day , end_day = 20220101, stock_
     mdd = maxdrawdown(x$市場報酬指數)
     mdd_ratio = (x$市場報酬指數[mdd$to] - x$市場報酬指數[mdd$from]) / x$市場報酬指數[mdd$from]
     mdd_ratio = round(mdd_ratio,digits = 4)
+    mdd_start_day = x$年月日[mdd$from]
+    mdd_end_day = x$年月日[mdd$to]
     #顯示與輸出
   #cat("投資開始日期為:",as.character(x$年月日[1]),"\n")
   #cat("結束期間為:",as.character(x$年月日[length(x$年月日)]),"\n")
@@ -144,7 +153,10 @@ portfolio_function = function(table_data, start_day , end_day = 20220101, stock_
     cat("最大回落結束日期為:",as.character(x$年月日[mdd$to]),"\n")
     cat("#####################","\n")
   }
-  market_return_risk_func(market_return_index)
+market_return_risk_func(market_return_index)  
+
+#合併表格 
+#sum_data = cbind(pf_value_df , market_value_df) 
   
  ##### 畫圖的部分
   graphics_data = merge(portfolio_return_index, market_return_index, by = "年月日")
@@ -156,14 +168,38 @@ portfolio_function = function(table_data, start_day , end_day = 20220101, stock_
     xlab("投資期間") +
     ylab("報酬指數")
   return_index_image
-  
+
 }
 
 #設定投資參數
  # all_stock_list = unique(table_data$證券代碼)
  # stock_list = all_stock_list
- # stock_list = c(3008,0050,0056,1101,1102,1103,1104,1108,1109,1110,1201,1203,1210,1213,1215,1216,1217,1218,1219,1220,1225,1227,1229,1231,1232,1233,1234)
- # portfolio_function(table_data,start_day = 20140101, end_day = 20220511,stock_list = stock_list ,global_market_index = 0050)
+ stock_list = c(3008,0050,0056,1101,1102,1103,1104,1108,1109,1110,1201,1203,1210,1213,1215,1216,1217,1218,1219,1220,1225,1227,1229,1231,1232,1233,1234)
+ portfolio_function(table_data,start_day = 20210101, end_day = 20220511,stock_list = stock_list ,global_market_index = 0050)
+
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
